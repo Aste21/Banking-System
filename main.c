@@ -6,32 +6,30 @@
 #include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
-#include <float.h>
-#include <errno.h>
 
 #define ACCOUNTS 10000
-#define MAX_TEXT_LENGTH 40
+#define MAX_TEXT_LENGTH 30
 #define MAX_TEXT_LENGTH_D MAX_TEXT_LENGTH + 3
 #define DEBT_LIMIT -1000
 #define MAX_SAVINGS 99999999999999999
 
 typedef struct
 {
-    char name[MAX_TEXT_LENGTH];
-    char surname[MAX_TEXT_LENGTH];
-    char address[MAX_TEXT_LENGTH];
-    char pesel[MAX_TEXT_LENGTH];
+    char name[MAX_TEXT_LENGTH_D];
+    char surname[MAX_TEXT_LENGTH_D];
+    char address[MAX_TEXT_LENGTH_D];
+    char pesel[MAX_TEXT_LENGTH_D];
     float balance;
     float savings;
 } CustAccount;
 
-int does_file_exist(const char *path)
+bool does_file_exist(const char *path)
 {
     if (access(path, F_OK) == -1)
     {
-        return 0;
+        return false;
     }
-    return 1;
+    return true;
 }
 
 void flush_stdin()
@@ -46,6 +44,50 @@ void to_lower(char *word)
     {
         word[j] = tolower(word[j]);
     }
+}
+
+bool is_name(char *word)
+{
+    int i;
+    bool is_letter = false;
+    for (i = 0; word[i]; i++)
+    {
+        if ((word[i] < 'A' || (word[i] > 'Z' && word[i] < 'a') || word[i] > 'z') && word[i] != ' ')
+        {
+            return false;
+        }
+        if (word[i] != ' ')
+        {
+            is_letter = true;
+        }
+    }
+    if (i < 2 || !is_letter)
+    {
+        return false;
+    }
+    return true;
+}
+
+bool is_address(char *word)
+{
+    int i;
+    bool is_letter = false;
+    for (i = 0; word[i]; i++)
+    {
+        if ((word[i] < '0' || (word[i] > '9' && word[i] < 'A') || (word[i] > 'Z' && word[i] < 'a') || word[i] > 'z') && word[i] != ' ')
+        {
+            return false;
+        }
+        if (word[i] != ' ')
+        {
+            is_letter = true;
+        }
+    }
+    if (i < 2 || !is_letter)
+    {
+        return false;
+    }
+    return true;
 }
 
 void choice_input(char *user_choice_f)
@@ -79,7 +121,9 @@ bool is_float(char *number)
     bool is_number = false;
     bool is_dot = false;
     bool is_number_aftdot = false;
-    for (int i = 0; number[i]; i++)
+    int number_of_decimal = 0;
+    int i;
+    for (i = 0; number[i]; i++)
     {
         if (number[i] != '.' && (number[i] < '0' || number[i] > '9'))
         {
@@ -93,6 +137,7 @@ bool is_float(char *number)
                 if (is_dot)
                 {
                     is_number_aftdot = true;
+                    number_of_decimal += 1;
                 }
             }
             else if (number[i] == '.' && (!is_number || is_dot))
@@ -105,6 +150,14 @@ bool is_float(char *number)
             }
         }
     }
+    if(number_of_decimal > 2)
+    {
+        return false;
+    }
+    if (i < 1)
+    {
+        return false;
+    }
     if (is_dot && !is_number_aftdot)
     {
         return false;
@@ -114,12 +167,17 @@ bool is_float(char *number)
 
 bool is_int(char *number)
 {
-    for (int i = 0; number[i]; i++)
+    int i;
+    for (i = 0; number[i]; i++)
     {
         if (number[i] <= '0' || number[i] > '9')
         {
             return false;
         }
+    }
+    if (i < 1)
+    {
+        return false;
     }
     return true;
 }
@@ -144,6 +202,10 @@ bool is_pesel(char *pesel)
 bool strings_compare(char *word_1, char *word_2)
 {
     if (word_1[0] == 0)
+    {
+        return false;
+    }
+    if (strlen(word_1) != strlen(word_2))
     {
         return false;
     }
@@ -173,6 +235,55 @@ bool strings_compare(char *word_1, char *word_2)
     return true;
 }
 
+bool confirmation()
+{
+    char user_choice_f[MAX_TEXT_LENGTH_D];
+    while (1)
+    {
+        while (1)
+        {
+            printf("Would you like to confirm the action? (yes/no)\n");
+            fgets(user_choice_f, MAX_TEXT_LENGTH_D, stdin);
+            if (strlen(user_choice_f) <= MAX_TEXT_LENGTH)
+            {
+                user_choice_f[strcspn(user_choice_f, "\n")] = 0;
+                break;
+            }
+            printf("ERROR: Input too long, try again.\n\n");
+            flush_stdin();
+        }
+        to_lower(user_choice_f);
+        if (strings_compare(user_choice_f, "yes"))
+        {
+            return true;
+        }
+        else if (strings_compare(user_choice_f, "no"))
+        {
+            return false;
+        }
+        printf("\nWrong input, try again\n");
+    }
+}
+
+void gett_accNo(int *accNof, FILE *fptr)
+{
+    CustAccount custf;
+    rewind(fptr);
+    for (int j = 1; j < ACCOUNTS; j++)
+    {
+        if (fread(&custf, sizeof(CustAccount), 1, fptr) != 1)
+        {
+            perror("Error reading from clients.dat");
+            exit(2);
+        }
+        if (is_name(custf.name))
+        {
+            *accNof += 1;
+        }
+    }
+    rewind(fptr);
+}
+
 void print_cust(int numb, CustAccount custf)
 {
     printf("\nNumber: %d | Name: %s | Surname: %s | Address: %s | Pesel: %s | Balance: %.2f | Savings: %.2f\n", numb, custf.name, custf.surname, custf.address, custf.pesel, custf.balance, custf.savings);
@@ -182,15 +293,26 @@ void get_name(char *namef)
 {
     while (1)
     {
-        printf("Input name: ");
-        fgets(namef, MAX_TEXT_LENGTH_D, stdin);
-        if (strlen(namef) <= MAX_TEXT_LENGTH)
+        while (1)
         {
-            namef[strcspn(namef, "\n")] = 0;
+            printf("Input name: ");
+            fgets(namef, MAX_TEXT_LENGTH_D, stdin);
+            if (strlen(namef) <= MAX_TEXT_LENGTH)
+            {
+                namef[strcspn(namef, "\n")] = 0;
+                break;
+            }
+            printf("ERROR: Input too long, try again.\n\n");
+            flush_stdin();
+        }
+        if (!is_name(namef))
+        {
+            printf("\nIncorrect input, try again.\n");
+        }
+        else
+        {
             break;
         }
-        printf("ERROR: Input too long, try again.\n\n");
-        flush_stdin();
     }
 }
 
@@ -198,15 +320,26 @@ void get_surname(char *surnamef)
 {
     while (1)
     {
-        printf("Input surname: ");
-        fgets(surnamef, MAX_TEXT_LENGTH_D, stdin);
-        if (strlen(surnamef) <= MAX_TEXT_LENGTH)
+        while (1)
         {
-            surnamef[strcspn(surnamef, "\n")] = 0;
+            printf("Input surname: ");
+            fgets(surnamef, MAX_TEXT_LENGTH_D, stdin);
+            if (strlen(surnamef) <= MAX_TEXT_LENGTH)
+            {
+                surnamef[strcspn(surnamef, "\n")] = 0;
+                break;
+            }
+            printf("ERROR: Input too long, try again.\n\n");
+            flush_stdin();
+        }
+        if (!is_name(surnamef))
+        {
+            printf("\nIncorrect input, try again.\n");
+        }
+        else
+        {
             break;
         }
-        printf("ERROR: Input too long, try again.\n\n");
-        flush_stdin();
     }
 }
 
@@ -214,15 +347,26 @@ void get_address(char *addressf)
 {
     while (1)
     {
-        printf("Input address: ");
-        fgets(addressf, MAX_TEXT_LENGTH_D, stdin);
-        if (strlen(addressf) <= MAX_TEXT_LENGTH)
+        while (1)
         {
-            addressf[strcspn(addressf, "\n")] = 0;
+            printf("Input address: ");
+            fgets(addressf, MAX_TEXT_LENGTH_D, stdin);
+            if (strlen(addressf) <= MAX_TEXT_LENGTH)
+            {
+                addressf[strcspn(addressf, "\n")] = 0;
+                break;
+            }
+            printf("\n\nERROR: Input too long, try again.\n\n");
+            flush_stdin();
+        }
+        if (!is_address(addressf))
+        {
+            printf("\nIncorrect input, try again.\n");
+        }
+        else
+        {
             break;
         }
-        printf("\n\nERROR: Input too long, try again.\n\n");
-        flush_stdin();
     }
 }
 
@@ -399,6 +543,7 @@ void create_acc(int *accNof, FILE *fptr)
     get_balance(balancef);
     get_savings(savingsf);
     CustAccount custf;
+    memset(&custf, 0, sizeof(CustAccount));
     strcpy(custf.name, namef);
     strcpy(custf.surname, surnamef);
     strcpy(custf.address, addressf);
@@ -410,13 +555,12 @@ void create_acc(int *accNof, FILE *fptr)
         perror("Error seeking in clients.dat");
         exit(3);
     }
-
+    *accNof += 1;
     if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
     {
         perror("Error during initialization of clients.dat");
         exit(2);
     }
-    *accNof += 1;
     rewind(fptr);
 }
 
@@ -690,17 +834,20 @@ void deposit(int accNof, FILE *fptr)
             }
             else
             {
-                custf.balance = custf.balance + strtof(dep_value, NULL);
-                if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                if (confirmation())
                 {
-                    perror("Error seeking in clients.dat");
-                    exit(3);
-                }
+                    custf.balance = custf.balance + strtof(dep_value, NULL);
+                    if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                    {
+                        perror("Error seeking in clients.dat");
+                        exit(3);
+                    }
 
-                if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
-                {
-                    perror("Error reading from clients.dat");
-                    exit(4);
+                    if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
+                    {
+                        perror("Error reading from clients.dat");
+                        exit(4);
+                    }
                 }
                 break;
             }
@@ -745,17 +892,20 @@ void withdrawal(int accNof, FILE *fptr)
             }
             else
             {
-                custf.balance = custf.balance - strtof(with_value, NULL);
-                if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                if (confirmation())
                 {
-                    perror("Error seeking in clients.dat");
-                    exit(3);
-                }
+                    custf.balance = custf.balance - strtof(with_value, NULL);
+                    if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                    {
+                        perror("Error seeking in clients.dat");
+                        exit(3);
+                    }
 
-                if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
-                {
-                    perror("Error reading from clients.dat");
-                    exit(4);
+                    if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
+                    {
+                        perror("Error reading from clients.dat");
+                        exit(4);
+                    }
                 }
                 break;
             }
@@ -827,27 +977,30 @@ void transfer(int accNof, FILE *fptr)
             }
             else
             {
-                custfrom.balance = custfrom.balance - strtof(trans_value, NULL);
-                if (fseek(fptr, (strtod(acc_from, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                if (confirmation())
                 {
-                    perror("Error seeking in clients.dat");
-                    exit(3);
-                }
-                if (fwrite(&custfrom, sizeof(CustAccount), 1, fptr) != 1)
-                {
-                    perror("Error reading from clients.dat");
-                    exit(4);
-                }
-                custto.balance = custto.balance + strtof(trans_value, NULL);
-                if (fseek(fptr, (strtod(acc_to, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
-                {
-                    perror("Error seeking in clients.dat");
-                    exit(3);
-                }
-                if (fwrite(&custto, sizeof(CustAccount), 1, fptr) != 1)
-                {
-                    perror("Error reading from clients.dat");
-                    exit(4);
+                    custfrom.balance = custfrom.balance - strtof(trans_value, NULL);
+                    if (fseek(fptr, (strtod(acc_from, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                    {
+                        perror("Error seeking in clients.dat");
+                        exit(3);
+                    }
+                    if (fwrite(&custfrom, sizeof(CustAccount), 1, fptr) != 1)
+                    {
+                        perror("Error reading from clients.dat");
+                        exit(4);
+                    }
+                    custto.balance = custto.balance + strtof(trans_value, NULL);
+                    if (fseek(fptr, (strtod(acc_to, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                    {
+                        perror("Error seeking in clients.dat");
+                        exit(3);
+                    }
+                    if (fwrite(&custto, sizeof(CustAccount), 1, fptr) != 1)
+                    {
+                        perror("Error reading from clients.dat");
+                        exit(4);
+                    }
                 }
                 break;
             }
@@ -922,18 +1075,21 @@ void save(int accNof, FILE *fptr)
                 }
                 else
                 {
-                    custf.balance = custf.balance - strtof(save_value, NULL);
-                    custf.savings = custf.savings + strtof(save_value, NULL);
-                    if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                    if (confirmation())
                     {
-                        perror("Error seeking in clients.dat");
-                        exit(3);
-                    }
+                        custf.balance = custf.balance - strtof(save_value, NULL);
+                        custf.savings = custf.savings + strtof(save_value, NULL);
+                        if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                        {
+                            perror("Error seeking in clients.dat");
+                            exit(3);
+                        }
 
-                    if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
-                    {
-                        perror("Error reading from clients.dat");
-                        exit(4);
+                        if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
+                        {
+                            perror("Error reading from clients.dat");
+                            exit(4);
+                        }
                     }
                     break;
                 }
@@ -957,18 +1113,21 @@ void save(int accNof, FILE *fptr)
                 }
                 else
                 {
-                    custf.balance = custf.balance + strtof(save_value, NULL);
-                    custf.savings = custf.savings - strtof(save_value, NULL);
-                    if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                    if (confirmation())
                     {
-                        perror("Error seeking in clients.dat");
-                        exit(3);
-                    }
+                        custf.balance = custf.balance + strtof(save_value, NULL);
+                        custf.savings = custf.savings - strtof(save_value, NULL);
+                        if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
+                        {
+                            perror("Error seeking in clients.dat");
+                            exit(3);
+                        }
 
-                    if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
-                    {
-                        perror("Error reading from clients.dat");
-                        exit(4);
+                        if (fwrite(&custf, sizeof(CustAccount), 1, fptr) != 1)
+                        {
+                            perror("Error reading from clients.dat");
+                            exit(4);
+                        }
                     }
                     break;
                 }
@@ -984,7 +1143,8 @@ int main(int argc, char *argv[])
     int accNo = 1;
     if (!does_file_exist("clients.dat"))
     {
-        CustAccount cust = {"", {0.0}};
+        CustAccount cust;
+        memset(&cust, 0 , sizeof(CustAccount));
         if ((fptr = fopen("clients.dat", "w+b")) == NULL)
         {
             perror("Error opening clients.dat");
@@ -1006,16 +1166,16 @@ int main(int argc, char *argv[])
             perror("Error opening clients.dat");
             exit(3);
         }
+        gett_accNo(&accNo, fptr);
     }
-    bool loop_var = true;
     char user_choice[21];
     printf("Hello user! Welcome to our bank :)\n\n");
-    while (loop_var)
+    while (1)
     {
         choice_input(user_choice);
         if (strings_compare(user_choice, "close"))
         {
-            loop_var = false;
+            break;
         }
         else if (strings_compare(user_choice, "create"))
         {
