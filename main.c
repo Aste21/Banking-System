@@ -5,7 +5,6 @@
 #include <string.h>
 #include <ctype.h>
 
-#define ACCOUNTS 10000
 #define MAX_TEXT_LENGTH 30
 #define MAX_TEXT_LENGTH_D MAX_TEXT_LENGTH + 3
 #define DEBT_LIMIT -1000
@@ -17,8 +16,10 @@ typedef struct
     char surname[MAX_TEXT_LENGTH_D];
     char address[MAX_TEXT_LENGTH_D];
     char pesel[MAX_TEXT_LENGTH_D];
-    float balance;
-    float savings;
+    int balance_dolars;
+    int balance_cents;
+    int savings_dolars;
+    int savings_cents;
 } CustAccount;
 
 bool does_file_exist(const char *path)
@@ -159,6 +160,29 @@ bool is_pesel(char *pesel)
     return (i == 11 && pesel[i] == '\0');
 }
 
+void divide(char *numb, int *dollars, int *cents)
+{
+    char *dotPosition = strchr(numb, '.');
+    if (dotPosition != NULL)
+    {
+        *dollars = atoi(numb);
+        int length = strlen(dotPosition + 1);
+        if (length == 1)
+        {
+            *cents = (dotPosition[1] - '0') * 10;
+        }
+        else
+        {
+            *cents = atoi(dotPosition + 1);
+        }
+    }
+    else
+    {
+        *dollars = atoi(numb);
+        *cents = 0;
+    }
+}
+
 bool strings_compare(char *word_1, char *word_2)
 {
     if (strlen(word_1) != strlen(word_2))
@@ -204,7 +228,7 @@ bool confirmation()
 
 void print_cust(int numb, CustAccount custf)
 {
-    printf("\nNumber: %d | Name: %s | Surname: %s | Address: %s | Pesel: %s | Balance: %.2f | Savings: %.2f\n", numb, custf.name, custf.surname, custf.address, custf.pesel, custf.balance, custf.savings);
+    printf("\nNumber: %d | Name: %s | Surname: %s | Address: %s | Pesel: %s | Balance: %d.%d | Savings: %d.%d\n", numb, custf.name, custf.surname, custf.address, custf.pesel, custf.balance_dolars, custf.balance_cents, custf.savings_dolars, custf.savings_cents);
 }
 
 void get_input(char *input, const char *prompt, int max_length, bool (*validation_func)(char *), float max_value)
@@ -292,8 +316,8 @@ void create_acc(int *accNof, FILE *fptr)
     get_pesel(custf.pesel);
     get_balance(balancef);
     get_savings(savingsf);
-    custf.balance = strtof(balancef, NULL);
-    custf.savings = strtof(savingsf, NULL);
+    divide(balancef, &custf.balance_dolars, &custf.balance_cents);
+    divide(savingsf, &custf.savings_dolars, &custf.savings_cents);
 
     if (fseek(fptr, (*accNof - 1) * sizeof(CustAccount), SEEK_SET))
     {
@@ -491,10 +515,21 @@ void transaction(int accNof, FILE *fptr, char *action)
     {
         printf("\n\nHow much money would you like to %s: \n", action);
         get_value(value);
-
+        int dolars, cents;
+        int help_var_1 = 0;
+        int help_var_2 = 0;
+        divide(value, &dolars, &cents);
+        if (cents > custf.balance_cents)
+        {
+            help_var_1 = 1;
+        }
+        if (cents + custf.balance_cents > 100)
+        {
+            help_var_2 = 1;
+        }
         if (strings_compare(action, "deposit"))
         {
-            if ((custf.balance - strtof(value, NULL)) >= MAX_SAVINGS)
+            if ((custf.balance_dolars + dolars + help_var_2) >= MAX_SAVINGS)
             {
                 printf("\nUnable to deposit money, too much funds on the account.\n");
                 break;
@@ -502,7 +537,7 @@ void transaction(int accNof, FILE *fptr, char *action)
         }
         else if (strings_compare(action, "withdrawal"))
         {
-            if ((custf.balance - strtof(value, NULL)) < DEBT_LIMIT)
+            if ((custf.balance_dolars - dolars - help_var_1) < DEBT_LIMIT)
             {
                 printf("\nUnable to withdraw money, not enough funds on the account.\n");
                 break;
@@ -513,11 +548,17 @@ void transaction(int accNof, FILE *fptr, char *action)
         {
             if (strings_compare(action, "deposit"))
             {
-                custf.balance = custf.balance + strtof(value, NULL);
+                custf.balance_dolars = custf.balance_dolars + dolars + help_var_2;
+                custf.balance_cents = (custf.balance_cents + cents) % 100;
             }
             else if (strings_compare(action, "withdrawal"))
             {
-                custf.balance = custf.balance - strtof(value, NULL);
+                custf.balance_dolars = custf.balance_dolars - dolars - help_var_1;
+                if (help_var_1)
+                {
+                    custf.balance_cents += 100;
+                }
+                custf.balance_cents = custf.balance_cents - cents;
             }
 
             if (fseek(fptr, (strtod(searched_acc_nr, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
@@ -588,12 +629,25 @@ void transfer(int accNof, FILE *fptr)
         {
             printf("\n\nHow much money would you like to transfer: \n");
             get_value(trans_value);
-            if (custfrom.balance - strtof(trans_value, NULL) < DEBT_LIMIT)
+            int dolars, cents;
+            int help_var_1 = 0;
+            int help_var_2 = 0;
+            divide(trans_value, &dolars, &cents);
+            if (cents > custfrom.balance_cents)
+            {
+                help_var_1 = 1;
+            }
+            if (cents + custto.balance_cents > 100)
+            {
+                help_var_2 = 1;
+            }
+
+            if ((custfrom.balance_dolars - dolars - help_var_1) < DEBT_LIMIT)
             {
                 printf("\nUnable to transfer money, too little funds on the from account.\n");
                 break;
             }
-            else if (custto.balance + strtof(trans_value, NULL) > MAX_SAVINGS)
+            else if ((custto.balance_dolars + dolars + help_var_2) >= MAX_SAVINGS)
             {
                 printf("\nUnable to transfer money, too much funds on the to account.\n");
                 break;
@@ -602,7 +656,12 @@ void transfer(int accNof, FILE *fptr)
             {
                 if (confirmation())
                 {
-                    custfrom.balance = custfrom.balance - strtof(trans_value, NULL);
+                    custfrom.balance_dolars = custfrom.balance_dolars - dolars - help_var_1;
+                    if (help_var_1)
+                    {
+                        custfrom.balance_cents += 100;
+                    }
+                    custfrom.balance_cents = custfrom.balance_cents - cents;
                     if (fseek(fptr, (strtod(acc_from, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
                     {
                         perror("Error seeking in clients.dat");
@@ -613,7 +672,8 @@ void transfer(int accNof, FILE *fptr)
                         perror("Error reading from clients.dat");
                         exit(4);
                     }
-                    custto.balance = custto.balance + strtof(trans_value, NULL);
+                    custto.balance_dolars = custto.balance_dolars + dolars + help_var_2;
+                    custto.balance_cents = (custto.balance_cents + cents) % 100;
                     if (fseek(fptr, (strtod(acc_to, NULL) - 1) * sizeof(CustAccount), SEEK_SET))
                     {
                         perror("Error seeking in clients.dat");
@@ -686,12 +746,24 @@ void save(int accNof, FILE *fptr)
             {
                 printf("\n\nHow much money would you like to save: \n");
                 get_value(save_value);
-                if (custf.balance - strtof(save_value, NULL) < DEBT_LIMIT)
+                int dolars, cents;
+                int help_var_1 = 0;
+                int help_var_2 = 0;
+                divide(save_value, &dolars, &cents);
+                if (cents > custf.balance_cents)
+                {
+                    help_var_1 = 1;
+                }
+                if (cents + custf.savings_cents > 100)
+                {
+                    help_var_2 = 1;
+                }
+                if (custf.balance_dolars - dolars - help_var_1 < DEBT_LIMIT)
                 {
                     printf("\nUnable to deposit money into savings, not enough funds on the account\n");
                     break;
                 }
-                else if (custf.savings + strtof(save_value, NULL) > MAX_SAVINGS)
+                else if (custf.savings_dolars + dolars + help_var_2 > MAX_SAVINGS)
                 {
                     printf("\nUnable to deposit money into savings, too much money on the savings account\n");
                     break;
@@ -700,8 +772,14 @@ void save(int accNof, FILE *fptr)
                 {
                     if ((is_confirmed = confirmation()))
                     {
-                        custf.balance = custf.balance - strtof(save_value, NULL);
-                        custf.savings = custf.savings + strtof(save_value, NULL);
+                        custf.savings_dolars = custf.savings_dolars + dolars + help_var_1;
+                        custf.savings_cents = (custf.savings_cents + cents) % 100;
+                        custf.balance_dolars = custf.balance_dolars - dolars - help_var_2;
+                        if (help_var_1)
+                        {
+                            custf.balance_cents += 100;
+                        }
+                        custf.balance_cents = custf.balance_cents - cents;
                     }
                     break;
                 }
@@ -713,12 +791,24 @@ void save(int accNof, FILE *fptr)
             {
                 printf("\n\nHow much money would you like to withdrawal from savings: \n");
                 get_value(save_value);
-                if (custf.savings - strtof(save_value, NULL) < 0)
+                int dolars, cents;
+                int help_var_1 = 0;
+                int help_var_2 = 0;
+                divide(save_value, &dolars, &cents);
+                if (cents > custf.savings_cents)
+                {
+                    help_var_1 = 1;
+                }
+                if (cents + custf.balance_cents > 100)
+                {
+                    help_var_2 = 1;
+                }
+                if (custf.savings_dolars - dolars - help_var_1 < 0)
                 {
                     printf("\nUnable to withdrawal money from savings, not enough funds on the savings account\n");
                     return;
                 }
-                else if (custf.balance + strtof(save_value, NULL) > MAX_SAVINGS)
+                else if (custf.balance_dolars + dolars + help_var_2 > MAX_SAVINGS)
                 {
                     printf("\nUnable to withdrawal money from savings, too much money on the account\n");
                     return;
@@ -727,8 +817,10 @@ void save(int accNof, FILE *fptr)
                 {
                     if ((is_confirmed = confirmation()))
                     {
-                        custf.balance = custf.balance + strtof(save_value, NULL);
-                        custf.savings = custf.savings - strtof(save_value, NULL);
+                        custf.savings_dolars = custf.savings_dolars - dolars - help_var_1;
+                        custf.savings_cents = (custf.savings_cents - cents) % 100;
+                        custf.balance_dolars = custf.balance_dolars + dolars + help_var_2;
+                        custf.balance_cents = (custf.balance_cents + cents) % 100;
                     }
                     break;
                 }
@@ -800,21 +892,13 @@ void main_loop(int *accNo, FILE *fptr)
 
 void gett_accNo(int *accNof, FILE *fptr)
 {
-    CustAccount custf;
-    rewind(fptr);
-    for (int j = 1; j < ACCOUNTS; j++)
+    if(fseek(fptr, 0L, SEEK_END))
     {
-        if (fread(&custf, sizeof(CustAccount), 1, fptr) != 1)
-        {
-            perror("Error reading from clients.dat");
-            exit(2);
-        }
-        if (is_name(custf.name))
-        {
-            *accNof += 1;
-        }
+        perror("Error seeking in clients.dat");
+        exit(3);
     }
-    rewind(fptr);
+    long int res = ftell(fptr);
+    *accNof = res/sizeof(CustAccount) + 1; 
 }
 
 void initialize_clients_file(int *accNof, FILE **fptr)
@@ -828,15 +912,6 @@ void initialize_clients_file(int *accNof, FILE **fptr)
         {
             perror("Error opening clients.dat");
             exit(1);
-        }
-
-        for (int i = 0; i < ACCOUNTS; i++)
-        {
-            if (fwrite(&cust, sizeof(CustAccount), 1, *fptr) != 1)
-            {
-                perror("Error during initialization of clients.dat");
-                exit(2);
-            }
         }
     }
     else
